@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en" data-edition="restricted">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TAMU-CC Sewer System Simulator</title>
+<meta name="description" content="Agent-based dry-weather wastewater model of the TAMU-CC campus, routed through its SWMM sewer model, running entirely in your browser.">
+<meta property="og:title" content="TAMU-CC Sewer System Simulator">
+<meta property="og:description" content="Simulate the dry-weather wastewater of the TAMU-CC campus, from its people to its sewer, in your browser.">
+<link rel="icon" href="favicon.svg?v=d18ad166e4" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&display=swap">
+<link rel="stylesheet" href="dash/dashboard.css?v=d18ad166e4">
+<link rel="stylesheet" href="web.css?v=d18ad166e4">
+<link rel="stylesheet" href="theme.css?v=d18ad166e4">
+</head>
+<body>
+
+<header class="appbar">
+  <a class="brand" href="./" aria-label="TAMU-CC Sewer System Simulator, home">
+    <img class="brand-mark" src="favicon.svg?v=d18ad166e4" alt="" width="34" height="34">
+    <span class="brand-text">
+      <span class="brand-name">TAMU-CC Sewer System Simulator</span>
+      <span class="brand-sub" id="status-line">Dry-weather wastewater · agent-based model + EPA SWMM 5.2.4 · runs in your browser</span>
+    </span>
+  </a>
+  <nav class="head-links"><a href="about.html">About the model</a></nav>
+</header>
+
+<section class="hero" aria-label="What this tool answers">
+  <div class="hero-inner">
+    <p class="hero-kicker">Campus wastewater planning</p>
+    <h1 class="hero-title">How will a change in the campus population load the sewer?</h1>
+    <p class="hero-text">Set how many people live, study and work on campus. The simulator follows each person's water use for a week, routes the wastewater through the campus sewer, and shows how full the pipes and pump stations get. Calibrated on Fall 2025 data.</p>
+    <ul class="hero-facts">
+      <li><b>63</b> buildings</li>
+      <li><b>66</b> pipes · <b>4</b> pump stations</li>
+      <li><b>3</b> monitoring stations</li>
+    </ul>
+  </div>
+</section>
+
+<main>
+
+  <!-- ------------------------------------------------ controls -->
+  <section class="col controls">
+    <form id="form" novalidate>
+
+      <div class="panel scenario">
+        <div class="panel-head"><h2>Scenario</h2></div>
+        <p class="note">Set the number of people on campus. Everything else stays at the calibrated values.</p>
+        <div id="agents"><p class="note loading">Loading the model…</p></div>
+        <div class="total-row" id="total-row"></div>
+        <div class="links">
+          <button id="reset" type="button" class="link">reset to today's campus</button>
+          <button id="copy" type="button" class="link">copy a link to this scenario</button>
+        </div>
+        <p class="hint" id="copied" role="status"></p>
+      </div>
+
+      <div class="panel runpanel">
+        <button class="primary" id="run" type="submit">Run scenario</button>
+        <button id="stop" type="button" hidden>Stop</button>
+        <p class="note run-note">Results are for one week, after a week of warm-up.</p>
+        <div id="progress-wrap" hidden>
+          <div class="bar"><div class="bar-fill" id="bar"></div></div>
+          <div class="progress-meta"><span id="stage-label">&nbsp;</span><span id="percent-label"></span></div>
+        </div>
+        <ol class="stages" id="stages">
+          <li data-stage="abm"><span class="dot"></span><span class="sname">Agents</span><span class="state"></span></li>
+          <li data-stage="couple"><span class="dot"></span><span class="sname">Coupling</span><span class="state"></span></li>
+          <li data-stage="swmm"><span class="dot"></span><span class="sname">Sewer routing</span><span class="state"></span></li>
+          <li data-stage="export"><span class="dot"></span><span class="sname">Results</span><span class="state"></span></li>
+          <li data-stage="verify"><span class="dot"></span><span class="sname">Checks</span><span class="state"></span></li>
+        </ol>
+        <p class="msg" id="status" role="status"></p>
+        <p class="hint" id="py-status" role="status"></p>
+      </div>
+
+      <div class="panel">
+        <details id="params">
+          <summary><h2 class="inline">Model parameters</h2> <span class="hint">calibrated, read-only</span></summary>
+          <div id="param-list"></div>
+        </details>
+      </div>
+
+    </form>
+  </section>
+
+  <!-- ------------------------------------------------ results -->
+  <section class="col results">
+
+    <nav class="tabs" aria-label="Views">
+      <button class="tab" data-tab="results" title="Key numbers and flows at the monitoring stations">Overview</button>
+      <button class="tab" data-tab="capacity" title="How full the pipes, manholes and pump stations get">Pipe capacity</button>
+      <button class="tab active" data-tab="network" title="Pipes, manholes and SWMM flows; click a node or pipe">Sewer network</button>
+      <button class="tab" data-tab="campus" title="Replay of the people on campus; click a building for its wastewater">People &amp; buildings</button>
+      <button class="tab" data-tab="checks" title="The model's 30 correctness checks">Checks</button>
+      <button class="tab" data-tab="log">Log</button>
+    </nav>
+
+    <div class="tabpanel" id="tab-results">
+      <div id="results-empty" class="howto">
+        <h3>Three steps to a result</h3>
+        <ol>
+          <li><b>Set the scenario.</b> Change the number of resident students, commuter students or faculty and staff, or keep today's campus.</li>
+          <li><b>Run it.</b> About two minutes: the agents' water use is simulated, coupled to the sewer model, and routed by EPA SWMM.</li>
+          <li><b>Read the answer.</b> Overview gives the flows at the three monitoring stations; Pipe capacity shows how close pipes and pump stations come to their limits.</li>
+        </ol>
+      </div>
+      <div id="results-body" hidden>
+        <div class="tiles" id="tiles"></div>
+        <div class="card">
+          <div class="card-head"><strong>Flow at the three monitoring stations</strong><span class="hint">second simulated week</span></div>
+          <div id="chart-flow"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><strong>Wastewater generated on campus, by source</strong><span class="hint">gallons per 15 minutes, second simulated week</span></div>
+          <div id="chart-source"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><strong>Files</strong><span class="hint">results of this run</span></div>
+          <div class="files" id="files"></div>
+        </div>
+        <p class="hint">Drag across a chart to zoom in; double-click to zoom out.</p>
+      </div>
+    </div>
+
+    <div class="tabpanel" id="tab-capacity">
+      <p class="empty" id="cap-empty">Run a scenario to see how full the pipes, manholes and pump stations get.</p>
+      <div id="cap-body" hidden>
+        <p class="note cap-window" id="cap-window"></p>
+        <div class="tiles cap-tiles" id="cap-tiles"></div>
+        <div class="card">
+          <div class="card-head"><strong>Fullest pipes</strong><span class="hint"><b>Peak fullness</b>: highest water depth ÷ pipe diameter. <b>Peak flow ÷ capacity</b>: highest flow ÷ the flow the pipe carries when just full by gravity (set by its size, slope and roughness).</span></div>
+          <div class="tbl-wrap"><table class="cap-table" id="cap-pipes"></table></div>
+        </div>
+        <div class="cap-two">
+          <div class="card">
+            <div class="card-head"><strong>Pump stations</strong><span class="hint">wet well's highest level and each pump's share of time running</span></div>
+            <div class="tbl-wrap"><table class="cap-table" id="cap-pumps"></table></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><strong>Manholes</strong><span class="hint">water above the top of the pipes, and flooding</span></div>
+            <div id="cap-manholes"></div>
+          </div>
+        </div>
+        <p class="hint cap-notes">Flows include groundwater infiltration (0.870 cfs in total), which takes up part of every pipe's capacity, most in the lower part of the network. When peak flow ÷ capacity is above 100 %, the pipe runs under pressure: water rises in the manhole above it and pushes the extra flow through. Short spells of this are common in sewers, but a pipe that does it often has no spare capacity for growth. A pipe can also be full with little flow when water backs up from downstream; the table marks those. "Show on map" opens the Sewer network at the moment of the peak, coloured by how full each pipe is.</p>
+      </div>
+    </div>
+
+    <!-- the dashboard's Map tab (dash/map.js) -->
+    <div class="tabpanel active" id="tab-network">
+      <div class="map-toolbar" id="map-controls" hidden>
+        <strong class="map-run" id="map-run"></strong>
+        <select id="map-node-var" title="colour the nodes by"></select>
+        <select id="map-link-var" title="colour the pipes by"></select>
+        <button id="map-profile-btn" title="water surface along a path, like SWMM's profile plot">Profile…</button>
+        <span class="hint" id="map-hint">Click a node or pipe for its time series; shift-click to add more.</span>
+      </div>
+      <p class="note map-note" id="map-note" hidden></p>
+      <div class="map-frame">
+        <label class="check inline basemap-toggle"><input type="checkbox" id="map-basemap" checked> street map</label>
+        <div id="network"></div>
+        <div class="osm-credit" id="osm-credit">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
+        <div class="map-legend" id="map-legend"></div>
+      </div>
+      <div class="timebar" id="timebar" hidden>
+        <button id="map-play" title="play">&#9654;</button>
+        <input type="range" id="map-time" min="0" value="0" step="1" aria-label="time">
+        <span id="map-time-label"></span>
+      </div>
+      <div class="card" id="profile-panel" hidden>
+        <div class="card-head"><strong id="profile-title"></strong>
+          <button class="link" id="profile-close" type="button">close</button></div>
+        <div id="profile-svg"></div>
+      </div>
+      <div class="card" id="sel-panel" hidden>
+        <div class="card-head">
+          <div id="sel-chips"></div>
+          <select id="sel-var" aria-label="variable to plot"></select>
+          <label class="check inline" id="obs-wrap" hidden><input type="checkbox" id="obs-on"> observed</label>
+          <button class="link" id="sel-csv" type="button" title="the plotted values as a table">download CSV</button>
+        </div>
+        <p class="note" id="sel-note"></p>
+        <div id="sel-chart"></div>
+        <p class="hint">Drag across the chart to zoom in; double-click to zoom out. The dashed line is the map's time.</p>
+        <table class="props" id="sel-props"></table>
+      </div>
+    </div>
+
+    <!-- the dashboard's Campus tab (dash/campus.js) -->
+    <div class="tabpanel" id="tab-campus">
+      <div class="map-toolbar" id="cv-controls" hidden>
+        <strong class="map-run" id="cv-run"></strong>
+        <label class="check inline"><input type="checkbox" id="cv-people" checked> people</label>
+        <label class="check inline"><input type="checkbox" id="cv-packets" checked> flow packets</label>
+        <label class="check inline"><input type="checkbox" id="cv-labels"> node flows</label>
+        <label class="check inline"><input type="checkbox" id="cv-streets" checked> street map</label>
+        <select id="cv-speed" aria-label="playback speed">
+          <option value="4" selected>1 hour per second</option>
+          <option value="16">4 hours per second</option>
+          <option value="96">1 day per second</option>
+          <option value="1">15 min per second</option>
+        </select>
+        <button id="cv-desktop" type="button" hidden>Open in NetLogo</button>
+        <select id="bld-select" aria-label="show the wastewater of a building"><option value="">wastewater of a building…</option></select>
+      </div>
+      <p class="hint" id="bld-hint" hidden>Click a building to see the wastewater it generates over time.</p>
+      <p class="hint" id="cv-desktop-msg"></p>
+      <p class="note" id="cv-note">Run the simulation to watch the agents here.</p>
+      <button id="cv-record" type="button" hidden>Record</button>
+      <div id="cv-body" hidden>
+        <div class="cv-grid">
+          <div class="cv-stage" id="cv-stage"><canvas id="cv-canvas"></canvas><div class="cv-tip" id="cv-tip" hidden></div>
+            <div class="osm-credit" id="cv-osm-credit">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div></div>
+          <div class="cv-side">
+            <div id="cv-readout"></div>
+            <div class="cv-legend">
+              <div class="cv-sub">buildings (outlines from the campus data): share of capacity in use</div>
+              <div class="cv-row"><span><i style="background:#9aa0a6"></i>empty</span></div>
+              <div class="cv-row"><span><i style="background:#3b6fd8"></i>up to 25 %</span></div>
+              <div class="cv-row"><span><i style="background:#21b5c9"></i>26–50 %</span></div>
+              <div class="cv-row"><span><i style="background:#f2c12e"></i>51–75 %</span></div>
+              <div class="cv-row"><span><i style="background:#e0453a"></i>over 75 %</span></div>
+              <div class="cv-sub">people (a sample, as NetLogo shows them)</div>
+              <div class="cv-row"><span><i style="background:#2e9e44"></i>residents</span></div>
+              <div class="cv-row"><span><i style="background:#d7301f"></i>commuters</span></div>
+              <div class="cv-row"><span><i style="background:#2a62c9"></i>faculty and staff</span></div>
+              <div class="cv-sub">nodes and pipes: wastewater, gal per 15 min</div>
+              <div class="cv-row"><span><i style="background:#ffffff;border:1px solid #c3c2b7"></i>none</span></div>
+              <div class="cv-row"><span><i style="background:#7fdc3a"></i>up to 20</span></div>
+              <div class="cv-row"><span><i style="background:#f28e2b"></i>20–50</span></div>
+              <div class="cv-row"><span><i style="background:#a35bd6"></i>over 50</span></div>
+              <p class="hint">On the street map, people who are off campus are not drawn. With the street map off, the replay looks as in NetLogo, where off-campus commuters and faculty wait at two spots left and right of centre.</p>
+            </div>
+          </div>
+        </div>
+        <div class="timebar">
+          <button id="cv-play" type="button" title="play">&#9654;</button>
+          <input type="range" id="cv-time" min="0" value="0" step="1" aria-label="time">
+          <span id="cv-time-label"></span>
+        </div>
+        <div class="card" id="bld-card" hidden>
+          <div class="card-head">
+            <strong id="bld-title"></strong>
+            <span class="hint" id="bld-sub"></span>
+            <button class="link" id="bld-csv" type="button">download CSV</button>
+            <button class="link" id="bld-close" type="button">close</button>
+          </div>
+          <div class="bld-stats" id="bld-stats"></div>
+          <div id="bld-chart"></div>
+          <p class="hint">Wastewater generated in the building, gallons per 15 minutes, by source. Drag across the chart to zoom in; double-click to zoom out. The dashed line is the replay's time.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabpanel" id="tab-checks">
+      <p class="empty" id="checks-empty">The pipeline's correctness checks appear here after a run.</p>
+      <p class="checks-summary" id="checks-summary" hidden></p>
+      <table id="checks-table" hidden><tbody></tbody></table>
+    </div>
+
+    <div class="tabpanel" id="tab-log">
+      <pre id="log">—</pre>
+    </div>
+
+  </section>
+</main>
+
+<footer>
+  <img src="favicon.svg?v=d18ad166e4" alt="" width="16" height="16"> Bishal Khatri and Hua Zhang, Texas A&amp;M University–Corpus Christi · NetLogo Web (CCL, Northwestern University) · EPA SWMM 5.2.4 · Pyodide ·
+  <a href="about.html">About, credits and licences</a>
+</footer>
+
+<script src="dash/chart.js?v=d18ad166e4"></script>
+<script src="dash/map.js?v=d18ad166e4"></script>
+<script src="dash/campus.js?v=d18ad166e4"></script>
+<script src="app.js?v=d18ad166e4"></script>
+</body>
+</html>
